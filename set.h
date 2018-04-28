@@ -24,51 +24,91 @@
 	name##_set_destroy(&set)
 #define set_set_hash_func(name, set, hash_func) \
 	name##_set_set_hash_func(set, hash_func)
-#define set_has(name, set, entity) \
-	name##_set_has(set, entity)
-#define set_put(name, set, entity) \
-	name##_set_put(set, entity)
-#define set_remove(name, set, entity) \
-	name##_set_remove(set, entity)
+#define set_compare_func(name, set, compare_func) \
+	name##_set_set_compare_func(set, compare_func)
+#define set_has(name, set, value) \
+	name##_set_has(set, value)
+#define set_put(name, set, value) \
+	name##_set_put(set, value)
+#define set_remove(name, set, value) \
+	name##_set_remove(set, value)
 #define set_size(name, set) \
 	name##_set_size(set)
+#define set_collision_mean(name, set) \
+	name##_set_collision_mean(set)
+#define set_collision_variance(name, set) \
+	name##_set_collision_variance(set)
 #define set_iter(name, set) \
 	name##_set_iter(set)
 #define set_next(name, set, it) \
 	name##_set_next(set, it)
-#define set_iter_get(name, set, it, pentity) \
-	name##_set_iter_get(set, it, pentity)
+#define set_iter_get(name, set, it, pvalue) \
+	name##_set_iter_get(set, it, pvalue)
 #define set_foreach(name, set, func, args) \
 	name##_set_foreach(set, func, args)
 
 /* All structures and functions are implemented here, 
    because maybe only `macro` can be used for any data type.
 */
-#define SET_DEFINE(name, entity_type) \
+#define SET_DEFINE(name, value_type) \
+	\
+	/* Data Entity, member 'next' is a Data Entity pointer. */\
+	typedef struct name##_ENTITY \
+	{ \
+		value_type value; \
+		struct name##_ENTITY *next; \
+	} name##_entity, *name##_iter; \
 	\
 	/* Binary Tree Node */\
 	typedef struct name##_NODE \
 	{ \
 		int hashcode; \
-		entity_type entity; \
+		size_t collision; \
+		name##_iter entities; \
 		struct name##_NODE *parent; \
 		struct name##_NODE *left; \
 		struct name##_NODE *right; \
-	} name##_node, *name##_iter; \
+	} name##_node, *name##_tree; \
 	\
 	/* Set Entity */\
 	typedef struct \
 	{ \
 		size_t size; \
-		name##_node *tree; \
-		int (*hash_func)(entity_type); \
+		size_t node_size; \
+		name##_tree tree; \
+		int (*hash_func)(value_type); \
+		int (*compare_func)(value_type, value_type); \
 	} name##_set_entity, *name##_set; \
+	\
+	/* Generate hashcode from raw value.
+	   If function `hash_func` is given, just use it. Otherwise, use `0`.
+	 */\
+	inline static int name##_real_hash(int (*hash_func)(value_type), \
+		value_type value) \
+	{ \
+		if (hash_func) \
+			return hash_func(value); \
+		/* set_error("Error [%2d]: Can not find valid hash function, use `0` instead\n", ERR_USER) */ \
+		return 0;\
+	} \
+	\
+	/* Compare two values
+	   If function `compare_func` is given, just use it. Otherwise, use `value1 - value2`.
+	 */\
+	inline static int name##_real_compare(int (*compare_func)(value_type, value_type), \
+		value_type value1, value_type value2) \
+	{ \
+		if (compare_func) \
+			return compare_func(value1, value2); \
+		/* set_error("Error [%2d]: Can not find valid compare function, use `value1 - value2` instead\n", ERR_USER) */ \
+		return value1 - value2; \
+	} \
 	\
 	/* Set hash function.
 	   It requires set is clean.
 	 */\
 	int name##_set_set_hash_func(name##_set set, \
-		int (*hash_func)(entity_type)) \
+		int (*hash_func)(value_type)) \
 	{ \
 		if (!set) \
 		{ \
@@ -82,32 +122,71 @@
 		return OK; \
 	} \
 	\
-	static name##_iter find_min(name##_iter tree) \
+	/* Set compare function.
+	   If requires set is clean.
+	 */\
+	int name##_set_set_compare_func(name##_set set, \
+		int (*compare_func)(value_type, value_type)) \
+	{ \
+		if (!set) \
+		{ \
+			set_error("Error [%2d]: Invalid set\n", ERR_USER) \
+		} \
+		if (set->tree && set->size > 0) \
+		{ \
+			set_error("Error [%2d]: Set is not clean\n", ERR_USER) \
+		} \
+		set->compare_func = compare_func; \
+		return OK; \
+	} \
+	\
+	/* Find min tree node
+	 */\
+	static name##_tree find_min(name##_tree tree) \
 	{ \
 		if (!tree) \
 			return NULL; \
-		name##_iter it = tree; \
-		name##_iter parent = NULL; \
-		while (it) \
+		name##_tree tr = tree; \
+		name##_tree parent = NULL; \
+		while (tr) \
 		{ \
-			parent = it; \
-			it = it->left; \
+			parent = tr; \
+			tr = tr->left; \
 		} \
 		return parent; \
 	} \
 	\
-	static name##_iter find_max(name##_iter tree) \
+	/* Find max tree node */\
+	static name##_tree find_max(name##_tree tree) \
 	{ \
 		if (!tree) \
 			return NULL; \
-		name##_iter it = tree; \
-		name##_iter parent = NULL; \
-		while (it) \
+		name##_tree tr = tree; \
+		name##_tree parent = NULL; \
+		while (tr) \
 		{ \
-			parent = it; \
-			it = it->right; \
+			parent = tr; \
+			tr = tr->right; \
 		} \
 		return parent; \
+	} \
+	\
+	/* Find next tree node
+	 */\
+	static name##_tree find_next(name##_tree tree) \
+	{ \
+		if (!tree) \
+			return NULL; \
+		if (tree->right) \
+			return find_min(tree->right); \
+		name##_tree next = tree->parent; \
+		while (next) \
+		{ \
+			if (next->hashcode > tree->hashcode) \
+				break; \
+			next = next->parent; \
+		} \
+		return next; \
 	} \
 	\
 	/* Create set.
@@ -123,6 +202,7 @@
 		} \
 		set->tree = NULL; \
 		set->size = 0; \
+		set->node_size = 0; \
 		set->hash_func = NULL; \
 		return set; \
 	} \
@@ -136,172 +216,237 @@
 			set_error("Error [%2d]: Invalid set\n", ERR_USER) \
 			return ERR_USER; \
 		} \
-		if (!(*pset)->hash_func || !(*pset)->tree || !(*pset)->size) \
+		if (!(*pset)->tree || !(*pset)->size) \
 		{ \
 			free(*pset); \
 			*pset = NULL; \
 			return OK; \
 		} \
-		name##_iter its[(*pset)->size]; \
-		name##_iter it = find_min((*pset)->tree); \
+		name##_tree trs[(*pset)->node_size]; \
+		name##_tree tr = find_min((*pset)->tree); \
 		size_t i = 0; \
-		while (it) \
+		while (tr) \
 		{ \
-			its[i] = it; \
+			trs[i] = tr; \
 			i++; \
-			if (it->right) \
-				it = find_min(it->right); \
-			else if (it->parent && it->parent->hashcode > it->hashcode) \
-				it = it->parent; \
-			else \
-				break; \
+			tr = find_next(tr); \
 		} \
-		for (i = 0; i < (*pset)->size; i++) \
+		name##_iter it; \
+		name##_iter prev; \
+		for (i = 0; i < (*pset)->node_size; i++) \
 		{ \
-			free(its[i]); \
+			it = trs[i]->entities; \
+			while (it) \
+			{ \
+				prev = it; \
+				it = it->next; \
+				free(prev); \
+			} \
+			free(trs[i]); \
 		} \
 		free(*pset); \
 		*pset = NULL; \
 		return OK; \
 	} \
 	\
-	/* Check whether `entity` exists.
+	/* Check whether `value` exists.
 	 */\
-	int name##_set_has(name##_set set, entity_type entity) \
+	int name##_set_has(name##_set set, value_type value) \
 	{ \
-		if (!set || !set->hash_func) \
+		if (!set) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return ERR_USER; \
 		} \
-		int hashcode = set->hash_func(entity); \
-		name##_iter it = set->tree; \
-		while (it) \
+		int hashcode = name##_real_hash(set->hash_func, value); \
+		name##_tree tr = set->tree; \
+		name##_iter it; \
+		while (tr) \
 		{ \
-			if (hashcode == it->hashcode) \
-				return OK; \
-			else if (hashcode < it->hashcode) \
-				it = it->left; \
+			if (hashcode == tr->hashcode) \
+			{ \
+				it = tr->entities; \
+				while (it) \
+				{ \
+					if (!name##_real_compare(set->compare_func, it->value, value)) \
+						return OK; \
+					it = it->next; \
+				} \
+				return ERR_EMPTY; \
+			} \
+			else if (hashcode < tr->hashcode) \
+				tr = tr->left; \
 			else \
-				it = it->right; \
+				tr = tr->right; \
 		} \
 		return ERR_EMPTY; \
 	} \
 	\
-	/* Put an entity.
+	/* Put an value.
 	 */\
-	int name##_set_put(name##_set set, entity_type entity) \
+	int name##_set_put(name##_set set, value_type value) \
 	{ \
-		if (!set || !set->hash_func) \
+		if (!set) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return ERR_USER; \
 		} \
-		int hashcode = set->hash_func(entity); \
-		name##_iter it = set->tree; \
-		name##_iter parent = NULL; \
-		while (it) \
+		int hashcode = name##_real_hash(set->hash_func, value); \
+		name##_tree tr = set->tree; \
+		name##_tree parent = NULL; \
+		name##_iter prev; \
+		name##_iter it; \
+		while (tr) \
 		{ \
-			if (hashcode == it->hashcode) \
-				return ERR_USER; \
-			else if (hashcode < it->hashcode) \
+			if (hashcode == tr->hashcode) \
 			{ \
-				parent = it; \
-				it = it->left; \
+				it = tr->entities; \
+				while (it) \
+				{ \
+					if (!name##_real_compare(set->compare_func, it->value, value)) \
+						return ERR_USER; \
+					prev = it; \
+					it = it->next; \
+				} \
+				it = (name##_iter) malloc(sizeof(name##_entity)); \
+				it->value = value; \
+				it->next = NULL; \
+				prev->next = it; \
+				tr->collision++; \
+				set->size++; \
+				return OK; \
+			} \
+			else if (hashcode < tr->hashcode) \
+			{ \
+				parent = tr; \
+				tr = tr->left; \
 			} \
 			else \
 			{ \
-				parent = it; \
-				it = it->right; \
+				parent = tr; \
+				tr = tr->right; \
 			} \
 		} \
-		name##_iter p = (name##_node *) malloc(sizeof(name##_node)); \
-		p->hashcode = hashcode; \
-		p->entity = entity; \
-		p->parent = parent; \
-		p->left = NULL; \
-		p->right = NULL; \
+		it = (name##_iter) malloc(sizeof(name##_entity)); \
+		it->value = value; \
+		it->next = NULL; \
+		tr = (name##_tree) malloc(sizeof(name##_node)); \
+		tr->hashcode = hashcode; \
+		tr->entities = it; \
+		tr->collision++; \
+		tr->parent = parent; \
+		tr->left = NULL; \
+		tr->right = NULL; \
 		if (!parent) \
-			set->tree = p; \
+			set->tree = tr; \
 		else if (hashcode < parent->hashcode) \
-			parent->left = p; \
+			parent->left = tr; \
 		else \
-			parent->right = p; \
+			parent->right = tr; \
 		set->size++; \
+		set->node_size++; \
 		return OK; \
 	} \
 	\
-	/* Remove an entity
+	/* Remove an value
 	 */\
-	int name##_set_remove(name##_set set, entity_type entity) \
+	int name##_set_remove(name##_set set, value_type value) \
 	{ \
-		if (!set || !set->hash_func) \
+		if (!set) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return ERR_USER; \
 		} \
-		int hashcode = set->hash_func(entity); \
-		name##_iter it = set->tree; \
-		name##_iter parent = NULL; \
-		name##_iter cur; \
-		while (it) \
+		int hashcode = name##_real_hash(set->hash_func, value); \
+		name##_tree tr = set->tree; \
+		name##_tree parent = NULL; \
+		name##_tree cur = NULL; \
+		name##_iter it; \
+		name##_iter prev = NULL; \
+		while (tr) \
 		{ \
-			if (hashcode == it->hashcode) \
+			if (hashcode == tr->hashcode) \
 			{ \
-				parent = it->parent; \
-				if (it->left && !it->right) \
+				it = tr->entities; \
+				while (it) \
 				{ \
-					/* it has only left child */ \
-					printf("[%d] has only left child\n", it->hashcode); \
-					cur = it->left; \
-				} \
-				else if (!it->left && it->right) \
-				{ \
-					/* it has only right child */ \
-					printf("[%d] has only right child\n", it->hashcode); \
-					cur = it->right; \
-				} \
-				else if (it->left && it->right) \
-				{ \
-					/* it has two children */ \
-					printf("[%d] has two children\n", it->hashcode); \
-					cur = find_max(it->left); \
-					if (cur != it->left) \
+					if (!name##_real_compare(set->compare_func, it->value, value)) \
 					{ \
-						cur->parent->right = cur->left; \
-						if (cur->left) \
-							cur->left->parent = cur->parent; \
-						it->left->parent = cur; \
-						it->right->parent = cur; \
-						cur->left = it->left; \
+						/* OK, `value` exists. */ \
+						if (prev) \
+						{ \
+							/* The tree node has other entities left. Keep it*/ \
+							prev->next = it->next; \
+							tr->collision--; \
+						} \
+						else \
+						{ \
+							/* The tree node has nothing left. Remove it*/ \
+							parent = tr->parent; \
+							if (tr->left && !tr->right) \
+							{ \
+								/* it has only left child */ \
+								printf("[%d] has only left child\n", tr->hashcode); \
+								cur = tr->left; \
+							} \
+							else if (!tr->left && tr->right) \
+							{ \
+								/* it has only right child */ \
+								printf("[%d] has only right child\n", tr->hashcode); \
+								cur = tr->right; \
+							} \
+							else if (tr->left && tr->right) \
+							{ \
+								/* it has two children */ \
+								printf("[%d] has two children\n", tr->hashcode); \
+								cur = find_max(tr->left); \
+								if (cur != tr->left) \
+								{ \
+									cur->parent->right = cur->left; \
+									if (cur->left) \
+										cur->left->parent = cur->parent; \
+									tr->left->parent = cur; \
+									tr->right->parent = cur; \
+									cur->left = tr->left; \
+								} \
+								cur->right = tr->right; \
+							} \
+							if (cur) \
+							{ \
+								cur->parent = parent; \
+								printf("Find cur: %d\n", cur->hashcode); \
+							} \
+							if (!parent) \
+							{ \
+								set->tree = cur; \
+								printf("Put cur as root\n"); \
+							} \
+							else if (hashcode < parent->hashcode) \
+							{ \
+								parent->left = cur; \
+								printf("Put cur left of parent[%d]\n", parent->hashcode); \
+							} \
+							else \
+							{ \
+								parent->right = cur; \
+								printf("Put cur right of parent[%d]\n", parent->hashcode); \
+							} \
+							free(tr); \
+							set->node_size--; \
+						} \
+						free(it); \
+						set->size--; \
+						return OK; \
 					} \
-					cur->right = it->right; \
+					prev = it; \
+					it = it->next; \
 				} \
-				cur->parent = parent; \
-				printf("Find cur: %d\n", cur->hashcode); \
-				if (!parent) \
-				{ \
-					set->tree = cur; \
-					printf("Put cur as root\n"); \
-				} \
-				else if (hashcode < parent->hashcode) \
-				{ \
-					parent->left = cur; \
-					printf("Put cur left of parent[%d]\n", parent->hashcode); \
-				} \
-				else \
-				{ \
-					parent->right = cur; \
-					printf("Put cur right of parent[%d]\n", parent->hashcode); \
-				} \
-				free(it); \
-				set->size--; \
-				return OK; \
+				break; \
 			} \
-			else if (hashcode < it->hashcode) \
-				it = it->left; \
+			else if (hashcode < tr->hashcode) \
+				tr = tr->left; \
 			else \
-				it = it->right; \
+				tr = tr->right; \
 		} \
 		return ERR_USER; \
 	} \
@@ -310,7 +455,7 @@
 	 */\
 	int name##_set_size(name##_set set) \
 	{ \
-		if (!set || !set->hash_func) \
+		if (!set) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return ERR_USER; \
@@ -318,16 +463,72 @@
 		return set->size; \
 	} \
 	\
+	/* Get set collision mean
+	 */\
+	double name##_set_collision_mean(name##_set set) \
+	{ \
+		if (!set) \
+		{ \
+			set_error("Error [%2d]: Invalid set\n", ERR_USER) \
+		} \
+		if (!set->node_size) \
+			return 0.0; \
+		long total = 0; \
+		name##_tree tr = set->tree; \
+		while (tr) \
+		{ \
+			total += tr->collision - 1; \
+			tr = find_next(tr); \
+		} \
+		return 1.0 * total / set->node_size; \
+	} \
+	\
+	/* Get set collision variance
+	 */\
+	double name##_set_collision_variance(name##_set set) \
+	{ \
+		if (!set) \
+		{ \
+			set_error("Error [%2d]: Invalid set\n", ERR_USER) \
+		} \
+		if (!set->node_size) \
+			return 0.0; \
+		long sum = 0; \
+		double mean; \
+		double diff; \
+		double total = 0; \
+		size_t i = 0; \
+		double collisions[set->node_size]; \
+		name##_tree tr = set->tree; \
+		while (tr) \
+		{ \
+			collisions[i] = tr->collision - 1; \
+			sum += collisions[i]; \
+			i++; \
+			tr = find_next(tr); \
+		} \
+		mean = 1.0 * sum / set->node_size; \
+		for (i = 0; i < set->node_size; i++) \
+		{ \
+			diff = collisions[i] - mean; \
+			total += diff * diff; \
+		} \
+		return total / set->node_size; \
+	} \
+	\
 	/* Get set iterator.
 	 */\
 	name##_iter name##_set_iter(name##_set set) \
 	{ \
-		if (!set || !set->hash_func) \
+		if (!set) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return NULL; \
 		} \
-		return find_min(set->tree); \
+		name##_tree tr = find_min(set->tree); \
+		if (!tr) \
+			return NULL; \
+		return tr->entities; \
 	} \
 	\
 	/* Get next iterator.
@@ -335,30 +536,43 @@
 	 */\
 	name##_iter name##_set_next(name##_set set, name##_iter it) \
 	{ \
-		if (!set || !set->hash_func || !it) \
+		if (!set || !it) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return NULL; \
 		} \
-		if (it->right) \
-			return find_min(it->right); \
-		if (it->parent && it->parent->hashcode > it->hashcode) \
-			return it->parent; \
-		return NULL; \
+		if (it->next) \
+			return it->next; \
+		int hashcode = name##_real_hash(set->hash_func, it->value); \
+		name##_tree tr = set->tree; \
+		name##_tree next; \
+		while (tr) \
+		{ \
+			if (hashcode == tr->hashcode) \
+				break; \
+			else if (hashcode < tr->hashcode) \
+				tr = tr->left; \
+			else \
+				tr = tr->right; \
+		} \
+		tr = find_next(tr); \
+		if (!tr) \
+			return NULL; \
+		return tr->entities; \
 	} \
 	\
-	/* Get entity of current iterator.
+	/* Get value of current iterator.
 	   [Warn] If current iterator has been freed, unkonwn error will happen.
 	 */\
-	name##_set_iter_get(name##_set set, name##_iter it, entity_type *pentity) \
+	name##_set_iter_get(name##_set set, name##_iter it, value_type *pvalue) \
 	{ \
 		if (!it) \
 		{ \
 			set_error("Error [%2d]: Invalid iterator\n", ERR_USER) \
 			return ERR_USER; \
 		} \
-		if (pentity) \
-			*pentity = it->entity; \
+		if (pvalue) \
+			*pvalue = it->value; \
 		return OK; \
 	} \
 	\
@@ -367,9 +581,9 @@
 	   If set size if changed during foreach, it will stop immediately.
 	 */\
 	int name##_set_foreach(name##_set set, \
-		int (*func)(entity_type, void *), void *args) \
+		int (*func)(value_type, void *), void *args) \
 	{ \
-		if (!set || !set->hash_func) \
+		if (!set) \
 		{ \
 			set_error("Error  [%2d]: Invalid set\n", ERR_USER) \
 			return ERR_USER; \
@@ -378,23 +592,42 @@
 		{ \
 			set_error("Error [%2d]: Invalid func\n", ERR_USER); \
 		} \
-		name##_iter it = find_min(set->tree); \
+		name##_tree tr = find_min(set->tree); \
+		name##_tree next; \
+		name##_iter it; \
 		size_t size = set->size; \
-		while (it) \
+		while (tr) \
 		{ \
-			if (func(it->entity, args) || set->size != size) \
+			it = tr->entities; \
+			while (it) \
 			{ \
-				set_error("Error [%2d]: User requests to quit, or hashmap has been changed\n", ERR_USER) \
-				return ERR_USER; \
+				if (func(it->value, args) || set->size != size) \
+				{ \
+					set_error("Error [%2d]: User requests to quit, or hashmap has been changed\n", ERR_USER) \
+					return ERR_USER; \
+				} \
+				it = it->next; \
 			} \
-			if (it->right) \
-				it = find_min(it->right); \
-			else if (it->parent && it->parent->hashcode > it->hashcode) \
-				it = it->parent; \
-			else \
-				break; \
+			tr = find_next(tr); \
 		} \
 		return OK; \
 	} \
+
+/* Some default functions */
+int str_hashcode(const char *value)
+{
+	char *p = (char *)value;
+	int hash = 0;
+	for (p; *p; p++)
+	{
+		hash += *p;
+		hash += (hash << 10);
+		hash ^= (hash >> 6);
+	}
+	hash += (hash << 3);
+	hash ^= (hash >> 11);
+	hash += (hash << 15);
+	return hash;
+}
 
 #endif

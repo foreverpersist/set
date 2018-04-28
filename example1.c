@@ -20,6 +20,8 @@ int main(int argc, char *argv[])
 	iter(int) it;
 	int entity;
 	int status;
+	double mean;
+	double variance;
 
 	printf("Init\n");
 	set(int) set = set_create(int);
@@ -42,12 +44,20 @@ int main(int argc, char *argv[])
 	size = set_size(int, set);
 	printf("[Size] size: %d\n", size);
 
+	printf("Collision\n");
+	mean = set_collision_mean(int, set);
+	variance = set_collision_variance(int, set);
+	printf("[Collision] mean: %f, variance:%f\n", mean, variance);
+
 	printf("Iterate\n");
 	i = 0;
 	for (it = set_iter(int, set); it != NULL; it = set_next(int, set, it))
 	{
 		set_iter_get(int, set, it, &entity);
-		printf("[Iterate] entity: %d\n", entity);
+		printf("[Iterate] No.%d entity: %d\n", i, entity);
+		i++;
+		if (i >= 2 * size)
+			break;
 	}
 
 	printf("Foreach\n");

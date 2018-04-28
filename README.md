@@ -8,14 +8,22 @@
 
 	set
 		|-size
+		|-node_size
 		|-tree
 		|-hash_func
+		|-compare_func
 
 	node
 		|-hashcode
-		|-entity
+		|-collision
+		|-entities
+		|-parent
 		|-left
 		|-right
+
+	entity
+		|-value
+		|-next
 
 # API
 
@@ -41,44 +49,57 @@
 
 ---
 
-	Set hash function to generate unique hashcode to identity entities.
+	Set hash function to generate hashcode to identity values.
 
-> * You have to invoke it to set valid `hash_func`.
-> * `hash_func` must generate unique hashcode for different entities. Otherwise set can't distinguish them.
+> * `hash_func` is supposed to generate unique hashcode if possible.
+> * Default `hash_func` always return 0.
 > * Return 0 for success.
 
 ```
-	int name##_set_set_hash_func(name##_set set, int (*hash_func)(entity_type));
+	int name##_set_set_hash_func(name##_set set, int (*hash_func)(value_type));
 ```
 
 ---
 
-	Check whether `entity` exists.
+	Set compare function to distinguish values.
 
+> * `compare_func` is required to return 0 when two values are the same, 
+	and return non-zero when they are different.
+> * Default `compare_func` always return `value1 - value2`.
 > * Return 0 for success.
 
 ```
-	int name##_set_has(name##_set set, entity_type entity);
+	int name##_set_set_compare_func(name##_set set, int (*compare_func)(value_type, value_type));
 ```
 
 ---
 
-	Put an entity.
-
+	Check whether `value` exists.
+ 
 > * Return 0 for success.
 
 ```
-	int name##_set_put(name##_set set, entity_type entity);
+	int name##_set_has(name##_set set, value_type value);
 ```
 
 ---
 
-	Remove an entity.
+	Put an value.
 
 > * Return 0 for success.
 
 ```
-	int name##_set_remove(name##_set set, entity_type entity);
+	int name##_set_put(name##_set set, value_type value);
+```
+
+---
+
+	Remove an value.
+
+> * Return 0 for success.
+
+```
+	int name##_set_remove(name##_set set, value_type value);
 ```
 
 ---
@@ -89,6 +110,26 @@
 
 ```
 	int name##_set_size(name##_set set);
+```
+
+---
+
+	Query set collision mean.
+
+> * Return collision mean for success, return negative for failure.
+
+```
+	double name##_set_collision_mean(name##_set set);
+```
+
+---
+
+	Query set collision variance.
+
+> * Return collision variance for success, return negative for failure.
+
+```
+	double name##_set_collision_variance(name##_set set);
 ```
 
 ---
@@ -113,14 +154,14 @@
 
 ---
 
-	Visit all entities with function `func` and extra parameter `args`.
+	Visit all values with function `func` and extra parameter `args`.
 
 > * If `func` is `NULL`, do nothing.
 > * It will stop immediately if set size is changed.
 > * Return 0 for success.
 
 ```
-	int name##_set_foreach(name##_set set, int (func*)(entity_type), void *args);
+	int name##_set_foreach(name##_set set, int (func*)(value_type), void *args);
 ```
 
 ## Macro API
@@ -149,10 +190,18 @@
 
 ---
 
+	Macro of function `name##_set_set_compare_func`
+
+```
+	int set_set_compare_func(name, set, compare_func)
+```
+
+---
+
 	Macro of function `name##_set_has`
 
 ```
-	int set_has(name, set, entity);
+	int set_has(name, set, value);
 ```
 
 ---
@@ -160,7 +209,7 @@
 	Macro of function `name##_set_put`
 
 ```
-	int set_put(name, set, entity);
+	int set_put(name, set, value);
 ```
 
 ---
@@ -168,7 +217,7 @@
 	Macro of function `name_set_remove`
 
 ```
-	int set_remove(name, set, entity);
+	int set_remove(name, set, value);
 ```
 
 ---
@@ -177,6 +226,22 @@
 
 ```
 	int set_size(name, set);
+```
+
+---
+
+	Macro of function `name##_set_collision_mean`
+
+```
+	double set_collision_mean(name, set)
+```
+
+---
+
+	Macro of function `name##_set_collision_variance`
+
+```
+	double set_collision_variance(name, set)
 ```
 
 ---
@@ -205,4 +270,6 @@
 
 # Example
 
-[example.c](example.c)
+[example1.c](example1.c)
+
+[example2.c](example2.c)
